@@ -53,7 +53,7 @@ routes::~routes() {
             delete r.second;
         }
     }
-
+    delete _default_handler;
 }
 
 std::unique_ptr<http::reply> routes::exception_reply(std::exception_ptr eptr) {
