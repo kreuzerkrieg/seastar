@@ -42,20 +42,6 @@ routes::routes() : _general_handler([this](std::exception_ptr eptr) mutable {
     return exception_reply(eptr);
 }) {}
 
-routes::~routes() {
-    for (int i = 0; i < NUM_OPERATION; i++) {
-        for (auto kv : _map[i]) {
-            delete kv.second;
-        }
-    }
-    for (int i = 0; i < NUM_OPERATION; i++) {
-        for (auto r : _rules[i]) {
-            delete r.second;
-        }
-    }
-    delete _default_handler;
-}
-
 std::unique_ptr<http::reply> routes::exception_reply(std::exception_ptr eptr) {
     auto rep = std::make_unique<http::reply>();
     try {
@@ -86,23 +72,20 @@ std::unique_ptr<http::reply> routes::exception_reply(std::exception_ptr eptr) {
     return rep;
 }
 
-future<std::unique_ptr<http::reply> > routes::handle(const sstring& path, std::unique_ptr<http::request> req, std::unique_ptr<http::reply> rep) {
-    handler_base* handler = get_handler(str2type(req->_method),
-            normalize_url(path), req->param);
-    if (handler != nullptr) {
-        try {
-            handler->verify_mandatory_params(*req);
-            auto r =  handler->handle(path, std::move(req), std::move(rep));
-            return r.handle_exception(_general_handler);
-        } catch (...) {
-            rep = exception_reply(std::current_exception());
-        }
-    } else {
-        rep.reset(new http::reply());
+future<std::unique_ptr<http::reply>> routes::handle(const sstring& path, std::unique_ptr<http::request> req, std::unique_ptr<http::reply> rep) {
+    try {
+        auto& handler = get_handler(str2type(req->_method), normalize_url(path), req->param);
+        handler.verify_mandatory_params(*req);
+        auto r = handler.handle(path, std::move(req), std::move(rep));
+        return r.handle_exception(_general_handler);
+    } catch (const std::out_of_range&) {
+        rep = std::make_unique<http::reply>();
         json_exception ex(not_found_exception("Not found"));
-        rep->set_status(http::reply::status_type::not_found, ex.to_json()).done(
-                "json");
+        rep->set_status(http::reply::status_type::not_found, ex.to_json()).done("json");
+    } catch (...) {
+        rep = exception_reply(std::current_exception());
     }
+
     return make_ready_future<std::unique_ptr<http::reply>>(std::move(rep));
 }
 
@@ -113,9 +96,9 @@ sstring routes::normalize_url(const sstring& url) {
     return url.substr(0, url.length() - 1);
 }
 
-handler_base* routes::get_handler(operation_type type, const sstring& url,
+handler_base& routes::get_handler(operation_type type, const sstring& url,
         parameters& params) {
-    handler_base* handler = get_exact_match(type, url);
+    auto& handler = get_exact_match(type, url);
     if (handler != nullptr) {
         return handler;
     }
@@ -127,21 +110,20 @@ handler_base* routes::get_handler(operation_type type, const sstring& url,
         }
         params.clear();
     }
-    return _default_handler;
+    return *_default_handler;
 }
 
-routes& routes::add(operation_type type, const url& url,
-        handler_base* handler) {
-    match_rule* rule = new match_rule(handler);
+routes& routes::add(operation_type type, const url& url, handler_base* handler) {
+    auto rule = std::make_unique<match_rule>(handler);
     rule->add_str(url._path);
-    if (url._param != "") {
+    if (!url._param.empty()) {
         rule->add_param(url._param, true);
     }
-    return add(rule, type);
+    return add(std::move(rule), type);
 }
 
-routes& routes::add_default_handler(handler_base* handler) {
-    _default_handler = handler;
+routes& routes::add_default_handler(std::unique_ptr<handler_base>&& handler) {
+    _default_handler = std::move(handler);
     return *this;
 }
 

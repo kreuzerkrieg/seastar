@@ -109,8 +109,8 @@ public:
      * @param type the operation type
      * @return it self
      */
-    routes& add(match_rule* rule, operation_type type = GET) {
-        _rules[type][_rover++] = rule;
+    routes& add(std::unique_ptr<match_rule>&& rule, operation_type type = GET) {
+        _rules[type][_rover++] = std::move(rule);
         return *this;
     }
 
@@ -130,7 +130,7 @@ public:
      * @param handler
      * @return
      */
-    routes& add_default_handler(handler_base* handler);
+    routes& add_default_handler(std::unique_ptr<handler_base>&& handler);
 
     /**
      * the main entry point.
@@ -149,9 +149,12 @@ public:
      * @param url the request url
      * @return the handler if exists or nullptr if it does not
      */
-    handler_base* get_exact_match(operation_type type, const sstring& url) const {
-        auto i = _map[type].find(url);
-        return (i == _map[type].end()) ? nullptr : i->second;
+    handler_base& get_exact_match(operation_type type, const sstring& url) const {
+        auto found = _map.at(type).find(url);
+        if (found == _map.at(type).end()) {
+            throw std::out_of_range("url not found");
+        }
+        return *(found->second);
     }
 
     /**
@@ -161,8 +164,7 @@ public:
      * @param params a parameter object that will be filled during the match
      * @return a handler based on the type/url match
      */
-    handler_base* get_handler(operation_type type, const sstring& url,
-            parameters& params);
+    handler_base& get_handler(operation_type type, const sstring& url, parameters& params);
 
 private:
     /**
@@ -173,15 +175,18 @@ private:
      * @return the url from the request without the last /
      */
     sstring normalize_url(const sstring& url);
-
-    std::unordered_map<sstring, handler_base*> _map[NUM_OPERATION];
+    using handlers = std::unordered_map<sstring, std::unique_ptr<handler_base>>;
+    std::unordered_map<operation_type, handlers> _map{
+        {GET, {}}, {POST, {}}, {PUT, {}}, {DELETE, {}}, {HEAD, {}}, {OPTIONS, {}}, {TRACE, {}}, {CONNECT, {}}, {PATCH, {}}};
 public:
     using rule_cookie = uint64_t;
 private:
     rule_cookie _rover = 0;
-    std::map<rule_cookie, match_rule*> _rules[NUM_OPERATION];
+    using rules = std::unordered_map<rule_cookie, std::unique_ptr<match_rule>>;
+    std::unordered_map<operation_type, rules> _rules{
+        {GET, {}}, {POST, {}}, {PUT, {}}, {DELETE, {}}, {HEAD, {}}, {OPTIONS, {}}, {TRACE, {}}, {CONNECT, {}}, {PATCH, {}}};
     //default Handler -- for any HTTP Method and Path (/*)
-    handler_base* _default_handler = nullptr;
+    std::unique_ptr<handler_base> _default_handler;
 public:
     using exception_handler_fun = std::function<std::unique_ptr<http::reply>(std::exception_ptr eptr)>;
     using exception_handler_id = size_t;
@@ -226,9 +231,9 @@ public:
      * @param type the operation type
      * @return a cookie using which the rule can be removed
      */
-    rule_cookie add_cookie(match_rule* rule, operation_type type) {
+    rule_cookie add_cookie(std::unique_ptr<match_rule>&& rule, operation_type type) {
         auto pos = _rover++;
-        _rules[type][pos] = rule;
+        _rules[type][pos] = std::move(rule);
         return pos;
     }
 

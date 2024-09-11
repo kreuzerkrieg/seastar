@@ -42,20 +42,10 @@ namespace httpd {
 class match_rule {
 public:
     /**
-     * The destructor deletes matchers.
-     */
-    ~match_rule() {
-        for (auto m : _match_list) {
-            delete m;
-        }
-        delete _handler;
-    }
-
-    /**
      * Constructor with a handler
      * @param handler the handler to return when this match rule is met
      */
-    explicit match_rule(handler_base* handler)
+    explicit match_rule(handler_base& handler)
             : _handler(handler) {
     }
 
@@ -66,13 +56,13 @@ public:
      * the object during the matching process
      * @return a handler if there is a full match or nullptr if not
      */
-    handler_base* get(const sstring& url, parameters& params) {
+    handler_base& get(const sstring& url, parameters& params) {
         size_t ind = 0;
         if (_match_list.empty()) {
             return _handler;
         }
-        for (unsigned int i = 0; i < _match_list.size(); i++) {
-            ind = _match_list.at(i)->match(url, ind, params);
+        for (auto & matcher : _match_list) {
+            ind = matcher->match(url, ind, params);
             if (ind == sstring::npos) {
                 return nullptr;
             }
@@ -85,8 +75,8 @@ public:
      * @param match the matcher to add
      * @return this
      */
-    match_rule& add_matcher(matcher* match) {
-        _match_list.push_back(match);
+    match_rule& add_matcher(std::unique_ptr<matcher>&& match) {
+        _match_list.emplace_back(std::move(match));
         return *this;
     }
 
@@ -96,7 +86,7 @@ public:
      * @return this
      */
     match_rule& add_str(const sstring& str) {
-        add_matcher(new str_matcher(str));
+        add_matcher(std::make_unique<str_matcher>(str));
         return *this;
     }
 
@@ -108,13 +98,13 @@ public:
      * @return this
      */
     match_rule& add_param(const sstring& str, bool fullpath = false) {
-        add_matcher(new param_matcher(str, fullpath));
+        add_matcher(std::make_unique<param_matcher>(str, fullpath));
         return *this;
     }
 
 private:
-    std::vector<matcher*> _match_list;
-    handler_base* _handler;
+    std::vector<std::unique_ptr<matcher>> _match_list;
+    handler_base& _handler;
 };
 
 }

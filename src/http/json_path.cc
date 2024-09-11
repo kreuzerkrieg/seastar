@@ -38,10 +38,10 @@ void path_description::set(routes& _routes, handler_base* handler) const {
         handler->mandatory(i);
     }
 
-    if (params.size() == 0)
+    if (params.empty())
         _routes.put(operations.method, path, handler);
     else {
-        match_rule* rule = new match_rule(handler);
+        auto rule = std::make_unique<match_rule>(handler);
         rule->add_str(path);
         for (auto&& i : params) {
             if (i.type == url_component_type::FIXED_STRING) {
@@ -50,7 +50,7 @@ void path_description::set(routes& _routes, handler_base* handler) const {
                 rule->add_param(i.name, i.type == url_component_type::PARAM_UNTIL_END_OF_PATH);
             }
         }
-        _cookie = _routes.add_cookie(rule, operations.method);
+        _cookie = _routes.add_cookie(std::move(rule), operations.method);
     }
 }
 

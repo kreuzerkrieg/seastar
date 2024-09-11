@@ -21,17 +21,13 @@
 
 #pragma once
 
-#include <seastar/http/request.hh>
-#include <seastar/http/common.hh>
 #include <seastar/http/exception.hh>
 #include <seastar/http/reply.hh>
+#include <seastar/http/request.hh>
 
+namespace seastar::httpd {
 
-namespace seastar {
-
-namespace httpd {
-
-typedef const http::request& const_req;
+using const_req = const http::request&;
 
 /**
  * handlers holds the logic for serving an incoming request.
@@ -48,7 +44,7 @@ public:
     virtual ~handler_base() = default;
     /**
      * All handlers should implement this method.
-     *  It fill the reply according to the request.
+     *  It fills the reply according to the request.
      * @param path the url path used in this call
      * @param req the original request
      * @param rep the reply
@@ -74,7 +70,7 @@ public:
      */
     void verify_mandatory_params(const http::request& req) const {
         for (auto& param : _mandatory_param) {
-            if (req.get_query_param(param) == "") {
+            if (req.get_query_param(param).empty()) {
                 throw missing_param_exception(param);
             }
         }
@@ -82,6 +78,3 @@ public:
 };
 
 }
-
-}
-

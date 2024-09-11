@@ -92,7 +92,7 @@ public:
 };
 
 enum operation_type {
-    GET, POST, PUT, DELETE, HEAD, OPTIONS, TRACE, CONNECT, PATCH, NUM_OPERATION
+    GET, POST, PUT, DELETE, HEAD, OPTIONS, TRACE, CONNECT, PATCH
 };
 
 /**
