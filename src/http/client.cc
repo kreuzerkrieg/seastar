@@ -241,10 +241,10 @@ client::client(socket_address addr, shared_ptr<tls::certificate_credentials> cre
 {
 }
 
-client::client(std::unique_ptr<connection_factory> f, unsigned max_connections, retry_requests retry)
+client::client(std::unique_ptr<connection_factory> f, unsigned max_connections, size_t max_retries)
         : _new_connections(std::move(f))
         , _max_connections(max_connections)
-        , _retry(retry)
+        , _max_retries(max_retries)
 {
 }
 
@@ -346,31 +346,57 @@ future<> client::make_request(request req, reply_handler handle, abort_source& a
     return do_make_request(std::move(req), std::move(handle), &as, std::move(expected));
 }
 
+static future<std::optional<uint32_t>> handle_request_exception(uint32_t& retries, abort_source* as, const std::system_error& ex) {
+    ++retries;
+    if (as && as->abort_requested()) {
+        return make_exception_future<std::optional<uint32_t>>(as->abort_requested_exception_ptr());
+    }
+
+    auto code = ex.code().value();
+    if ((code != EPIPE) && (code != ECONNABORTED)) {
+        return make_exception_future<std::optional<uint32_t>>(ex);
+    }
+    return make_ready_future<std::optional<uint32_t>>(std::nullopt);
+}
+
+future<> client::make_raw_request(request& req, reply_handler& handle, abort_source* as, std::optional<reply::status_type> expected) {
+    return do_with(uint32_t{0}, std::system_error{}, [this, &req, &handle, as, expected](uint32_t& retries, std::system_error& e) {
+        return repeat_until_value([this, &retries, &req, &handle, as, expected, &e]() -> future<std::optional<uint32_t>> {
+                   if (retries == 0) {
+                       return with_connection([this, &req, &handle, as, expected](connection& con) {
+                           return do_make_request(con, req, handle, as, expected);
+                       },as).then([&retries]() -> future<std::optional<uint32_t>> {
+                               return make_ready_future<std::optional<uint32_t>>(retries);
+                       }).handle_exception_type([&retries, &e, as](const std::system_error& ex) {
+                           e = ex;
+                           // TODO: add some logic for issuing a new request, randomization? exponential backoff? a mix of these two?
+                           return handle_request_exception(retries, as, ex);
+                       });
+                   }
+                   if (retries <= _max_retries) {
+                       // The 'con' connection may not yet be freed, so the total connection count still account for it and with_new_connection() may
+                       // temporarily break the limit. That's OK, the 'con' will be closed really soon
+                       return with_new_connection([this, &req, &handle, as, expected](connection& con) {
+                                      return do_make_request(con, req, handle, as, expected);
+                       }, as).then([&retries]() -> future<std::optional<uint32_t>> {
+                           return make_ready_future<std::optional<uint32_t>>(retries);
+                       }).handle_exception_type([&retries, &e, as](const std::system_error& ex) {
+                           e = ex;
+                           // TODO: add some logic for issuing a new request, randomization? exponential backoff? a mix of these two?
+                           return handle_request_exception(retries, as, ex);
+                       });
+                   }
+                   if (e.code().value() != 0) {
+                       return make_exception_future<std::optional<uint32_t>>(e);
+                   }
+                   return make_ready_future<std::optional<uint32_t>>(retries);
+               }).discard_result();
+    });
+}
+
 future<> client::do_make_request(request req, reply_handler handle, abort_source* as, std::optional<reply::status_type> expected) {
-    return do_with(std::move(req), std::move(handle), [this, as, expected] (request& req, reply_handler& handle) mutable {
-        return with_connection([this, &req, &handle, as, expected] (connection& con) {
-            return do_make_request(con, req, handle, as, expected);
-        }, as).handle_exception_type([this, &req, &handle, as, expected] (const std::system_error& ex) {
-            if (as && as->abort_requested()) {
-                return make_exception_future<>(as->abort_requested_exception_ptr());
-            }
-
-            if (!_retry) {
-                return make_exception_future<>(ex);
-            }
-
-            auto code = ex.code().value();
-            if ((code != EPIPE) && (code != ECONNABORTED)) {
-                return make_exception_future<>(ex);
-            }
-
-            // The 'con' connection may not yet be freed, so the total connection
-            // count still account for it and with_new_connection() may temporarily
-            // break the limit. That's OK, the 'con' will be closed really soon
-            return with_new_connection([this, &req, &handle, as, expected] (connection& con) {
-                return do_make_request(con, req, handle, as, expected);
-            }, as);
-        });
+    return do_with(std::move(req), std::move(handle), [this, as, expected](request& req, reply_handler& handle) mutable {
+        return make_raw_request(req, handle, as, expected);
     });
 }
 

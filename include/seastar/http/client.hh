@@ -170,7 +170,6 @@ public:
 class client {
 public:
     using reply_handler = noncopyable_function<future<>(const reply&, input_stream<char>&& body)>;
-    using retry_requests = bool_class<struct retry_requests_tag>;
 
 private:
     friend class http::internal::client_ref;
@@ -180,8 +179,8 @@ private:
     std::unique_ptr<connection_factory> _new_connections;
     unsigned _nr_connections = 0;
     unsigned _max_connections;
+    size_t _max_retries{0};
     unsigned long _total_new_connections = 0;
-    const retry_requests _retry;
     condition_variable _wait_con;
     connections_list_t _pool;
 
@@ -237,7 +236,7 @@ public:
      * \param f -- the factory pointer
      * \param max_connections -- maximum number of connection a client is allowed to maintain
      * (both active and cached in pool)
-     * \param retry -- whether or not to retry requests on connection IO errors
+     * \param retry -- number of retries for requests failed on connection IO errors
      *
      * The client uses connections provided by factory to send requests over and receive responses
      * back. Once request-response cycle is over the connection used for that is kept by a client
@@ -265,7 +264,7 @@ public:
      * another one and retry the very same request one more time over this new connection. If the
      * second attempt fails, this error is reported back to user.
      */
-    explicit client(std::unique_ptr<connection_factory> f, unsigned max_connections = default_max_connections, retry_requests retry = retry_requests::no);
+    explicit client(std::unique_ptr<connection_factory> f, unsigned max_connections = default_max_connections, size_t max_retries = 0);
 
     /**
      * \brief Send the request and handle the response
@@ -296,6 +295,15 @@ public:
      * \param expected -- the optional expected reply status code, default is std::nullopt
      */
     future<> make_request(request req, reply_handler handle, abort_source& as, std::optional<reply::status_type> expected = std::nullopt);
+
+    /**
+     * \brief Send the request and handle the response, same as \ref make_request()
+     *
+     *  @attention Note that the method does not take the ownership of the
+     * `request and the `handle`, it caller's responsibility the make sure they
+     * are referencing valid instances
+     */
+    future<> make_raw_request(request& req, reply_handler& handle, abort_source* as = nullptr, std::optional<reply::status_type> expected = std::nullopt);
 
     /**
      * \brief Updates the maximum number of connections a client may have
