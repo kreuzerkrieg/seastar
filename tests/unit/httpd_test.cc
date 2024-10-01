@@ -1100,44 +1100,65 @@ SEASTAR_TEST_CASE(test_client_abort_recv_response) {
 
 SEASTAR_TEST_CASE(test_client_retry_request) {
     return seastar::async([] {
-        loopback_connection_factory lcf(1);
-        auto ss = lcf.get_server_socket();
-        future<> server = ss.accept().then([] (accept_result ar) {
-            return seastar::async([sk = std::move(ar.connection)] () mutable {
-                input_stream<char> in = sk.input();
-                read_simple_http_request(in);
-                output_stream<char> out = sk.output();
-                out.write("HTT").get(); // write incomplete response
-                out.flush().get();
-                out.close().get();
-            });
-        }).then([&ss] {
-            return ss.accept().then([] (accept_result ar) {
-                return seastar::async([sk = std::move(ar.connection)] () mutable {
-                    input_stream<char> in = sk.input();
-                    read_simple_http_request(in);
-                    output_stream<char> out = sk.output();
-                    sstring r200("HTTP/1.1 200 OK\r\nHost: localhost\r\n\r\n");
-                    out.write(r200).get(); // now write complete response
-                    out.flush().get();
-                    out.close().get();
+        for (auto success : {true, false}) {
+            seastar::async([&success] {
+                size_t max_retries = 5;
+                size_t retries = 0;
+                loopback_connection_factory lcf(1);
+                auto ss = lcf.get_server_socket();
+                future<> server = repeat_until_value([&retries, &max_retries, &ss]() -> future<std::optional<uint32_t>> {
+                                      return ss.accept()
+                                          .then([&retries](accept_result ar) {
+                                              ++retries;
+                                              return seastar::async([sk = std::move(ar.connection)]() mutable {
+                                                  input_stream<char> in = sk.input();
+                                                  read_simple_http_request(in);
+                                                  output_stream<char> out = sk.output();
+                                                  out.write("HTT").get(); // write incomplete response
+                                                  out.flush().get();
+                                                  out.close().get();
+                                              });
+                                          })
+                                          .then([&retries, &max_retries] {
+                                              if (retries >= max_retries) {
+                                                  return make_ready_future<std::optional<uint32_t>>(retries);
+                                              }
+                                              return make_ready_future<std::optional<uint32_t>>(std::nullopt);
+                                          });
+                                  }).then([&success, &ss](auto) {
+                    if (!success) {
+                        return make_ready_future();
+                    }
+                    return ss.accept().then([](accept_result ar) {
+                        return seastar::async([sk = std::move(ar.connection)]() mutable {
+                            input_stream<char> in = sk.input();
+                            read_simple_http_request(in);
+                            output_stream<char> out = sk.output();
+                            sstring r200("HTTP/1.1 200 OK\r\nHost: localhost\r\n\r\n");
+                            out.write(r200).get(); // now write complete response
+                            out.flush().get();
+                            out.close().get();
+                        });
+                    });
                 });
-            });
-        });
 
-        future<> client = seastar::async([&lcf] {
-            auto cln = http::experimental::client(std::make_unique<loopback_http_factory>(lcf), 2, http::experimental::client::retry_requests::yes);
-            auto req = http::request::make("GET", "test", "/test");
-            bool got_response = false;
-            cln.make_request(std::move(req), [&] (const http::reply& rep, input_stream<char>&& in) {
-                got_response = true;
-                return make_ready_future<>();
-            }, http::reply::status_type::ok).get();
-            cln.close().get();
-            BOOST_REQUIRE(got_response);
-        });
+                future<> client = seastar::async([&success, &max_retries, &lcf] {
+                    auto cln = http::experimental::client(std::make_unique<loopback_http_factory>(lcf), 2, success ? max_retries : max_retries - 1);
+                    auto req = http::request::make("GET", "test", "/test");
+                    bool got_response = false;
+                    cln.make_request(std::move(req),[&](const http::reply& rep, input_stream<char>&& in) {
+                        got_response = true;
+                        return make_ready_future<>();
+                    },http::reply::status_type::ok).handle_exception([](auto e) {
+                        BOOST_REQUIRE_EXCEPTION([&e] { std::rethrow_exception(e); }(), std::system_error, [](auto& ex) { return ex.code().value() == ECONNABORTED; });
+                    }).get();
+                    cln.close().get();
+                    BOOST_REQUIRE(success ? got_response : !got_response);
+                });
 
-        when_all(std::move(client), std::move(server)).discard_result().get();
+                when_all(std::move(client), std::move(server)).get();
+            }).get();
+        }
     });
 }
 
