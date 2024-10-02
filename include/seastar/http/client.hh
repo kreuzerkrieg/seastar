@@ -282,7 +282,7 @@ public:
      * client may restart the whole request processing in case server closes the connection
      * in the middle of operation
      */
-    future<> make_request(request req, reply_handler handle, std::optional<reply::status_type> expected = std::nullopt);
+    future<> make_request(request&& req, reply_handler&& handle, std::optional<reply::status_type>&& expected = std::nullopt);
 
     /**
      * \brief Send the request and handle the response (abortable)
@@ -294,7 +294,7 @@ public:
      * \param as -- abort source that aborts the request
      * \param expected -- the optional expected reply status code, default is std::nullopt
      */
-    future<> make_request(request req, reply_handler handle, abort_source& as, std::optional<reply::status_type> expected = std::nullopt);
+    future<> make_request(request&& req, reply_handler&& handle, abort_source& as, std::optional<reply::status_type>&& expected = std::nullopt);
 
     /**
      * \brief Send the request and handle the response, same as \ref make_request()
@@ -303,7 +303,7 @@ public:
      * `request and the `handle`, it caller's responsibility the make sure they
      * are referencing valid instances
      */
-    future<> make_raw_request(request& req, reply_handler& handle, abort_source* as = nullptr, std::optional<reply::status_type> expected = std::nullopt);
+    future<> make_request(request& req, reply_handler& handle, abort_source* as = nullptr, std::optional<reply::status_type> expected = std::nullopt);
 
     /**
      * \brief Updates the maximum number of connections a client may have

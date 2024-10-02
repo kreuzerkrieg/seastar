@@ -338,11 +338,11 @@ auto client::with_new_connection(Fn&& fn, abort_source* as) {
     });
 }
 
-future<> client::make_request(request req, reply_handler handle, std::optional<reply::status_type> expected) {
+future<> client::make_request(request&& req, reply_handler&& handle, std::optional<reply::status_type>&& expected) {
     return do_make_request(std::move(req), std::move(handle), nullptr, std::move(expected));
 }
 
-future<> client::make_request(request req, reply_handler handle, abort_source& as, std::optional<reply::status_type> expected) {
+future<> client::make_request(request&& req, reply_handler&& handle, abort_source& as, std::optional<reply::status_type>&& expected) {
     return do_make_request(std::move(req), std::move(handle), &as, std::move(expected));
 }
 
@@ -359,7 +359,7 @@ static future<std::optional<uint32_t>> handle_request_exception(uint32_t& retrie
     return make_ready_future<std::optional<uint32_t>>(std::nullopt);
 }
 
-future<> client::make_raw_request(request& req, reply_handler& handle, abort_source* as, std::optional<reply::status_type> expected) {
+future<> client::make_request(request& req, reply_handler& handle, abort_source* as, std::optional<reply::status_type> expected) {
     return do_with(uint32_t{0}, std::system_error{}, [this, &req, &handle, as, expected](uint32_t& retries, std::system_error& e) {
         return repeat_until_value([this, &retries, &req, &handle, as, expected, &e]() -> future<std::optional<uint32_t>> {
                    if (retries == 0) {
@@ -396,7 +396,7 @@ future<> client::make_raw_request(request& req, reply_handler& handle, abort_sou
 
 future<> client::do_make_request(request req, reply_handler handle, abort_source* as, std::optional<reply::status_type> expected) {
     return do_with(std::move(req), std::move(handle), [this, as, expected](request& req, reply_handler& handle) mutable {
-        return make_raw_request(req, handle, as, expected);
+        return make_request(req, handle, as, expected);
     });
 }
 
