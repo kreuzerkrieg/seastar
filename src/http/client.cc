@@ -141,8 +141,8 @@ future<connection::reply_ptr> connection::recv_reply() {
                 throw std::system_error(ECONNABORTED, std::system_category());
             }
             if (parser.failed()) {
-                http_log.trace("Parsing response failed");
-                throw std::runtime_error("Invalid http server response");
+                http_log.warn("Parsing response failed.{}", http_log.level() == log_level::debug ? format(" Reason: {}", parser.error_message()) : "");
+                throw std::system_error(EPIPE, std::system_category());
             }
 
             auto resp = parser.get_parsed_response();

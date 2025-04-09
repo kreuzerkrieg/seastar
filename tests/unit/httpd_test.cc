@@ -1690,6 +1690,18 @@ SEASTAR_TEST_CASE(case_insensitive_header) {
     return make_ready_future<>();
 }
 
+SEASTAR_TEST_CASE(broken_reply) {
+    http_response_parser parser;
+    parser.init();
+    char r101[] = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
+
+    parser.parse(r101, r101 + sizeof(r101), r101 + sizeof(r101));
+    BOOST_REQUIRE_EQUAL(parser.failed(), true);
+    BOOST_REQUIRE_EQUAL(parser.error_message().starts_with("Parsing error at offset 0: encountered \"Lorem ipsum dolor sit amet, cons\""), true);
+
+    return make_ready_future<>();
+}
+
 SEASTAR_TEST_CASE(case_insensitive_header_reply) {
     http_response_parser parser;
     parser.init();
