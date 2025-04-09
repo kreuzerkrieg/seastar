@@ -141,8 +141,17 @@ future<connection::reply_ptr> connection::recv_reply() {
                 throw std::system_error(ECONNABORTED, std::system_category());
             }
             if (parser.failed()) {
-                http_log.warn("Parsing response failed.{}", http_log.level() == log_level::debug ? format(" Reason: {}", parser.error_message()) : "");
-                throw std::system_error(EPIPE, std::system_category());
+                http_log.trace("Parsing response failed");
+                // Parsing the response failed, potentially due to a server-side bug or
+                // a transient error. Retrying might resolve the issue. To trigger a retry,
+                // return EPIPE to the caller. The original exception is retained as a
+                // nested exception so that, in case retries keep failing, the caller can
+                // identify the actual cause unrelated to the EPIPE error.
+                try {
+                    throw std::system_error(EPIPE, std::system_category());
+                } catch (...) {
+                    std::throw_with_nested(std::runtime_error(format("Invalid http server response. Reason: {}", parser.error_message())));
+                }
             }
 
             auto resp = parser.get_parsed_response();
