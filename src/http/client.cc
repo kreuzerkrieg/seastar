@@ -409,7 +409,7 @@ future<> client::do_make_request(connection& con, request& req, reply_handler& h
         }
 
         auto in = req._method != "HEAD" ? con.in(rep) : input_stream<char>(data_source(std::make_unique<skip_body_source>(rep)));
-        return handle(rep, std::move(in)).then([this, reply = std::move(reply), &con] {
+        return handle(req, rep, std::move(in)).then([this, reply = std::move(reply), &con] {
             if (reply->content_length > reply->consumed_content) {
                 auto bytes_left = reply->content_length - reply->consumed_content;
                 if (bytes_left <= _max_bytes_to_drain) {

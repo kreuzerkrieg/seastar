@@ -150,7 +150,7 @@ private:
 
 class client {
 public:
-    using reply_handler = noncopyable_function<future<>(const reply&, input_stream<char>&& body)>;
+    using reply_handler = noncopyable_function<future<>(request&, const reply&, input_stream<char>&& body)>;
     using retry_requests = bool_class<struct retry_requests_tag>;
 
 private:
