@@ -361,6 +361,7 @@ future<> client::make_request(request& req, reply_handler& handle, std::optional
             return make_exception_future<>(as->abort_requested_exception_ptr());
         }
 
+        http_log.debug("Exceptions thrown and handled. Reason: {}", ex);
         if (!_retry || !is_retryable_exception(ex)) {
             return make_exception_future<>(ex);
         }
@@ -413,10 +414,10 @@ future<> client::do_make_request(connection& con, request& req, reply_handler& h
             if (reply->content_length > reply->consumed_content) {
                 auto bytes_left = reply->content_length - reply->consumed_content;
                 if (bytes_left <= _max_bytes_to_drain) {
-                    http_log.trace("content was not fully consumed, {} bytes were left behind, skipping and returning the connection to the pool", bytes_left);
+                    http_log.debug("content was not fully consumed, {} bytes were left behind, skipping and returning the connection to the pool", bytes_left);
                     return con._read_buf.skip(bytes_left);
                 }
-                http_log.trace("content was not fully consumed, content length is {} but consumed only {}, will close the connection",
+                http_log.debug("content was not fully consumed, content length is {} but consumed only {}, will close the connection",
                                reply->content_length,
                                reply->consumed_content);
                 con._persistent = false;
