@@ -361,11 +361,13 @@ future<> client::make_request(request& req, reply_handler& handle, std::optional
             return make_exception_future<>(as->abort_requested_exception_ptr());
         }
 
-        http_log.debug("Exceptions thrown and handled. Reason: {}", ex);
+        auto msg = format("Exceptions thrown. Reason: {}", ex);
         if (!_retry || !is_retryable_exception(ex)) {
+            msg += " . Not retrying.";
+            http_log.debug("{}", msg);
             return make_exception_future<>(ex);
         }
-
+        http_log.debug("{}. Retrying.", msg);
         // The 'con' connection may not yet be freed, so the total connection
         // count still account for it and with_new_connection() may temporarily
         // break the limit. That's OK, the 'con' will be closed really soon
