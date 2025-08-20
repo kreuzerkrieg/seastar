@@ -69,7 +69,7 @@ default_retry_strategy::default_retry_strategy(unsigned max_retries, unsigned sc
 }
 
 default_retry_strategy::default_retry_strategy()
-    : default_retry_strategy(2, 25) /* Default overall retry time to fail is 50ms (0ms)+((1<<1)*25)ms) */ {
+    : default_retry_strategy(1, 25) /* Default overall retry time to fail is 25ms */ {
 }
 
 future<bool> default_retry_strategy::should_retry(std::exception_ptr error, unsigned attempted_retries) const {
@@ -81,22 +81,8 @@ future<bool> default_retry_strategy::should_retry(std::exception_ptr error, unsi
     co_return is_retryable_exception(error);
 }
 
-future<input_stream<char>> default_retry_strategy::analyze_reply(std::optional<reply::status_type> expected, const reply& rep, input_stream<char>&& in) const {
-    auto _in = std::move(in);
-    if (expected.has_value() && rep._status != expected.value()) {
-        if (!http_log.is_enabled(log_level::debug)) {
-            throw httpd::unexpected_status_error(rep._status);
-        }
-
-        auto response_content = co_await util::read_entire_stream_contiguous(_in);
-        http_log.debug("request finished with {}: {}", rep._status, response_content);
-        throw httpd::unexpected_status_error(rep._status);
-    }
-    co_return std::move(_in);
-}
-
 std::chrono::milliseconds default_retry_strategy::delay_before_retry(std::exception_ptr, unsigned attempted_retries) const {
-    if (attempted_retries <= 1) {
+    if (attempted_retries == 0) {
         // On first attempt, we do not delay
         return 0ms;
     }
