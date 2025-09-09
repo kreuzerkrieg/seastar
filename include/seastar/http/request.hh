@@ -197,8 +197,11 @@ struct request {
      * Set the content type mime type according to the file extension
      * that would have been used if it was a file: e.g. html, txt, json etc'
      */
-    void set_content_type(const sstring& content_type = "html") {
-        set_mime_type(http::mime_types::extension_to_type(content_type));
+    void set_content_type(std::string_view content_type = "html") {
+        if (content_type.find('/') == std::string_view::npos) {
+            content_type = http::mime_types::extension_to_type(content_type);
+        }
+        set_mime_type(sstring(content_type));
     }
 
     /**
