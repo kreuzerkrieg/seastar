@@ -280,6 +280,13 @@ public:
     future<> make_request(const request& req, reply_handler& handle, std::optional<reply::status_type> expected = std::nullopt, abort_source* as = nullptr);
     future<> make_request(const request& req, reply_handler& handle, const retry_strategy& strategy, std::optional<reply::status_type> expected = std::nullopt, abort_source* as = nullptr);
 
+    future<> maybe_retry_request(std::exception_ptr ex,
+                                 unsigned retry_count,
+                                 const request& req,
+                                 reply_handler& handle,
+                                 const retry_strategy& strategy,
+                                 std::optional<reply::status_type> expected,
+                                 abort_source* as);
     /**
      * \brief Updates the maximum number of connections a client may have
      *

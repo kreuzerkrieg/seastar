@@ -73,24 +73,17 @@ default_retry_strategy::default_retry_strategy()
 }
 
 future<bool> default_retry_strategy::should_retry(std::exception_ptr error, unsigned attempted_retries) const {
-    if (attempted_retries >= get_max_retries()) {
-        rs_logger.warn("Retries exhausted. Retry# {}", attempted_retries);
+    if (attempted_retries >= _max_retries) {
+        rs_logger.debug("Retries exhausted. Retry# {}", attempted_retries);
         co_return false;
     }
 
     co_return is_retryable_exception(error);
 }
 
-unsigned default_retry_strategy::get_max_retries() const noexcept {
-    return _max_retries;
+future<bool> no_retry_strategy::should_retry(std::exception_ptr error, unsigned) const {
+    co_return false;
 }
 
-future<bool> no_retry_strategy::should_retry(std::exception_ptr error, unsigned attempted_retries) const {
-    return make_ready_future<bool>(false);
-}
-
-unsigned no_retry_strategy::get_max_retries() const noexcept {
-    return 0;
-}
 }
 }

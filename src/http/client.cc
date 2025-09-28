@@ -219,11 +219,18 @@ client::client(socket_address addr, shared_ptr<tls::certificate_credentials> cre
 {
 }
 
-client::client(std::unique_ptr<connection_factory> f, unsigned max_connections, retry_requests retry, size_t max_bytes_to_drain): client(
+static std::unique_ptr<retry_strategy> get_strategy(client::retry_requests retry) {
+    if (retry == client::retry_requests::no) {
+        return std::make_unique<no_retry_strategy>();
+    }
+    return std::make_unique<default_retry_strategy>();
+}
+
+client::client(std::unique_ptr<connection_factory> f, unsigned max_connections, retry_requests retry, size_t max_bytes_to_drain) : client(
     std::move(f),
     max_connections,
     max_bytes_to_drain,
-    retry == retry_requests::no ? std::make_unique<no_retry_strategy>() : std::make_unique<default_retry_strategy>()) {
+    get_strategy(retry)) {
 }
 
 client::client(std::unique_ptr<connection_factory> f, unsigned max_connections, size_t max_bytes_to_drain, std::unique_ptr<retry_strategy>&& retry_strategy)
@@ -341,6 +348,26 @@ future<> client::make_request(const request& req, reply_handler& handle, std::op
     return make_request(req, handle, *_retry_strategy, expected, as);
 }
 
+future<> client::maybe_retry_request(std::exception_ptr ex,
+                                     unsigned retry_count,
+                                     const request& req,
+                                     reply_handler& handle,
+                                     const retry_strategy& strategy,
+                                     std::optional<reply::status_type> expected,
+                                     abort_source* as) {
+    return strategy.should_retry(ex, retry_count).then([this, ex = std::move(ex), retry_count, &req, &handle, &strategy, as, expected](bool retry) mutable {
+        if (!retry) {
+            return make_exception_future<>(std::move(ex));
+        }
+        return with_new_connection([this, &req, &handle, as, expected](connection& con) {
+                                       return do_make_request(con, req, handle, as, expected);
+                                   },
+                                   as).handle_exception([this, retry_count, &req, &handle, &strategy, as, expected](std::exception_ptr ex) {
+            return maybe_retry_request(std::move(ex), retry_count + 1, req, handle, strategy, expected, as);
+        });
+    });
+}
+
 future<> client::make_request(const request& req, reply_handler& handle, const retry_strategy& strategy, std::optional<reply::status_type> expected, abort_source* as) {
     if (as && as->abort_requested()) {
         return make_exception_future(as->abort_requested_exception_ptr());
@@ -356,29 +383,7 @@ future<> client::make_request(const request& req, reply_handler& handle, const r
         if (as && as->abort_requested()) {
             return make_exception_future<>(as->abort_requested_exception_ptr());
         }
-        size_t retry_count = 0;
-        return repeat_until_value([this, err = std::move(ex), retry_count, &req, &handle, &strategy, as, expected]() mutable -> future<std::optional<bool>> {
-                auto on_return = deferred_action([&retry_count]() noexcept { ++retry_count; });
-                return strategy.should_retry(err, retry_count).then([this, err, &req, &handle, as, expected](bool retry) mutable -> future<std::optional<bool>> {
-                    if (retry) {
-                        // The 'con' connection may not yet be freed, so the total connection
-                        // count still account for it and with_new_connection() may temporarily
-                        // break the limit. That's OK, the 'con' will be closed really soon
-
-                        return with_new_connection([this, &req, &handle, as, expected](connection& con) {
-                            return do_make_request(con, req, handle, as, expected).then([]() {
-                                return make_ready_future<std::optional<bool>>(true);
-                            });
-                        }, as).handle_exception([err](std::exception_ptr error) mutable {
-                            err = std::move(error);
-                            return make_ready_future<std::optional<bool>>();
-                        });
-                  }
-                  return make_exception_future<std::optional<bool>>(std::move(err));
-                });
-        }).then([](auto) {
-            return make_ready_future<>();
-        });
+        return maybe_retry_request(std::move(ex), 0, req, handle, strategy, expected, as);
     });
 }
 
