@@ -82,7 +82,7 @@ class file_data_source_impl : public data_source_impl {
             : _pos(pos), _size(size), _ready(std::move(f)) { }
     };
 
-    reactor::io_stats& _stats = reactor::io_stats::local();
+    io_stats& _stats = io_stats::local();
     file _file;
     file_input_stream_options _options;
     uint64_t _pos;

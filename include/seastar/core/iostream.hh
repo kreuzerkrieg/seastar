@@ -54,6 +54,7 @@ namespace bi = boost::intrusive;
 namespace seastar {
 
 
+struct io_stats;
 namespace net { class packet; }
 namespace testing {
 class input_stream_test;
@@ -61,22 +62,27 @@ class output_stream_test;
 }
 
 class data_source_impl {
+    io_stats& _stats;
 public:
-    virtual ~data_source_impl() {}
+    data_source_impl();
+    virtual ~data_source_impl();
     virtual future<temporary_buffer<char>> get() = 0;
     virtual future<temporary_buffer<char>> skip(uint64_t n);
     virtual future<> close() { return make_ready_future<>(); }
 };
 
 class data_source {
+    std::string _impl_name;
     std::unique_ptr<data_source_impl> _dsi;
 protected:
     data_source_impl* impl() const { return _dsi.get(); }
 public:
+    static thread_local std::unordered_map<std::string, uint64_t> source_impl_types;
     using tmp_buf = temporary_buffer<char>;
 
     data_source() noexcept = default;
-    explicit data_source(std::unique_ptr<data_source_impl> dsi) noexcept : _dsi(std::move(dsi)) {}
+    explicit data_source(std::unique_ptr<data_source_impl> dsi) noexcept;
+    ~data_source();
     data_source(data_source&& x) noexcept = default;
     data_source& operator=(data_source&& x) noexcept = default;
 
@@ -104,8 +110,10 @@ public:
 };
 
 class data_sink_impl {
+    io_stats& _stats;
 public:
-    virtual ~data_sink_impl() {}
+    data_sink_impl();
+    virtual ~data_sink_impl();
     virtual temporary_buffer<char> allocate_buffer(size_t size) {
         return temporary_buffer<char>(size);
     }
@@ -191,10 +199,13 @@ protected:
 };
 
 class data_sink {
+    std::string _impl_name;
     std::unique_ptr<data_sink_impl> _dsi;
 public:
+    static thread_local std::unordered_map<std::string, uint64_t> sink_impl_types;
     data_sink() noexcept = default;
-    explicit data_sink(std::unique_ptr<data_sink_impl> dsi) noexcept : _dsi(std::move(dsi)) {}
+    explicit data_sink(std::unique_ptr<data_sink_impl> dsi) noexcept;
+    ~data_sink();
     data_sink(data_sink&& x) noexcept = default;
     data_sink& operator=(data_sink&& x) noexcept = default;
     temporary_buffer<char> allocate_buffer(size_t size) {

@@ -962,7 +962,7 @@ future<size_t> io_queue::queue_request(internal::priority_class pc, io_direction
         p = make_lw_shared<std::vector<future<size_t>>>();
         p->reserve(parts.size());
         find_or_create_class(pc).on_split(dnl);
-        reactor::io_stats::local().aio_outsizes++;
+        io_stats::local().aio_outsizes++;
     } catch (...) {
         return current_exception_as_future<size_t>();
     }
@@ -1008,7 +1008,7 @@ future<size_t> io_queue::queue_request(internal::priority_class pc, io_direction
 
 future<size_t> io_queue::submit_io_read(size_t len, internal::io_request req, io_intent* intent, iovec_keeper iovs) noexcept {
     internal::priority_class pc = internal::priority_class(current_scheduling_group());
-    auto& io_stats = reactor::io_stats::local();
+    auto& io_stats = io_stats::local();
     ++io_stats.aio_reads;
     io_stats.aio_read_bytes += len;
     return queue_request(std::move(pc), io_direction_and_length(io_direction_read, len), std::move(req), intent, std::move(iovs));
@@ -1016,7 +1016,7 @@ future<size_t> io_queue::submit_io_read(size_t len, internal::io_request req, io
 
 future<size_t> io_queue::submit_io_write(size_t len, internal::io_request req, io_intent* intent, iovec_keeper iovs) noexcept {
     internal::priority_class pc = internal::priority_class(current_scheduling_group());
-    auto& io_stats = reactor::io_stats::local();
+    auto& io_stats = io_stats::local();
     ++io_stats.aio_writes;
     io_stats.aio_write_bytes += len;
     return queue_request(std::move(pc), io_direction_and_length(io_direction_write, len), std::move(req), intent, std::move(iovs));

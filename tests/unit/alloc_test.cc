@@ -23,6 +23,9 @@
 #include <seastar/core/shard_id.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/temporary_buffer.hh>
+#include <seastar/core/iostream.hh>
+#include "memory-data-sink.hh"
+
 #include <seastar/testing/perf_tests.hh>
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -37,6 +40,7 @@
 
 #include <malloc.h>
 #include <stdlib.h>
+
 
 using namespace seastar;
 
@@ -145,7 +149,10 @@ SEASTAR_TEST_CASE(test_temporary_buffer_aligned) {
 }
 
 SEASTAR_TEST_CASE(test_memory_diagnostics) {
+    std::stringstream ss;
+    auto sink = testing::memory_data_sink(ss);
     auto report = memory::generate_memory_diagnostics_report();
+    std::cout << report << std::endl;
 #ifdef SEASTAR_DEFAULT_ALLOCATOR
     BOOST_REQUIRE(report.length() == 0); // empty report with default allocator
 #else

@@ -1724,7 +1724,7 @@ void io_completion::complete_with(ssize_t res) {
         return;
     }
 
-    reactor::io_stats::local().aio_errors++;
+    io_stats::local().aio_errors++;
     try {
         throw_kernel_error(res);
     } catch (...) {
@@ -2607,6 +2607,110 @@ void reactor::register_metrics() {
                 sm::description(
                         "Counts the number of buffered bytes that were read ahead of time and were discarded because they were not needed, wasting disk bandwidth."
                         " Indicates over-eager read ahead configuration.")),
+        sm::make_counter("data_sources_count", _io_stats.data_sources_count,
+                sm::description(
+                        "Keep a track of the number of data_source_impl instances in the system.")),
+        /*
+        * Sources:
+        encryption::encrypted_data_source:     0
+        seastar::http::experimental::skip_body_source:     0
+        seastar::httpd::internal::chunked_source_impl:     0
+        seastar::tls::tls_connected_socket_impl::source_impl:     1
+        seastar::httpd::internal::content_length_source_impl:     0
+        s3::client::chunked_download_source:     1
+        compressed_file_data_source_impl<crc32_utils, true, (compressed_checksum_mode)1>:     0
+        sstables::checksummed_file_data_source_impl<crc32_utils, true>:     0
+        generic_server::counted_data_source_impl:     0
+        seastar::net::posix_data_source_impl:     13
+        create_ranged_source(seastar::data_source, unsigned long, std::optional<unsigned long>)::ranged_data_source:     1
+        seastar::file_data_source_impl:     1
+        */
+        sm::make_counter("encrypted_data_source",
+                         _io_stats.encrypted_data_source,
+                         sm::description(
+                             "Keep a track of the number of data_source_impl instances in the system.")),
+        sm::make_counter("skip_body_source",
+                         _io_stats.skip_body_source,
+                         sm::description(
+                             "Keep a track of the number of data_source_impl instances in the system.")),
+        sm::make_counter("chunked_source_impl",
+                         _io_stats.chunked_source_impl,
+                         sm::description(
+                             "Keep a track of the number of data_source_impl instances in the system.")),
+        sm::make_counter("tls_connected_socket_impl_source",
+                         _io_stats.tls_connected_socket_source_impl,
+                         sm::description(
+                             "Keep a track of the number of data_source_impl instances in the system.")),
+        sm::make_counter("content_length_source_impl",
+                         _io_stats.content_length_source_impl,
+                         sm::description(
+                             "Keep a track of the number of data_source_impl instances in the system.")),
+        sm::make_counter("chunked_download_source",
+                         _io_stats.chunked_download_source,
+                         sm::description(
+                             "Keep a track of the number of data_source_impl instances in the system.")),
+        sm::make_counter("compressed_file_data_source_impl",
+                         _io_stats.compressed_file_data_source_impl,
+                         sm::description(
+                             "Keep a track of the number of data_source_impl instances in the system.")),
+        sm::make_counter("checksummed_file_data_source_impl",
+                         _io_stats.checksummed_file_data_source_impl,
+                         sm::description(
+                             "Keep a track of the number of data_source_impl instances in the system.")),
+        sm::make_counter("counted_data_source_impl",
+                         _io_stats.counted_data_source_impl,
+                         sm::description(
+                             "Keep a track of the number of data_source_impl instances in the system.")),
+        sm::make_counter("posix_data_source_impl",
+                         _io_stats.posix_data_source_impl,
+                         sm::description(
+                             "Keep a track of the number of data_source_impl instances in the system.")),
+        sm::make_counter("ranged_data_source",
+                         _io_stats.ranged_data_source,
+                         sm::description(
+                             "Keep a track of the number of data_source_impl instances in the system.")),
+        sm::make_counter("file_data_source_impl",
+                         _io_stats.file_data_source_impl,
+                         sm::description(
+                             "Keep a track of the number of data_source_impl instances in the system.")),
+
+
+        sm::make_counter("data_sinks_count", _io_stats.data_sinks_count,
+                sm::description(
+                        "Keep a track of the number of data_sink_impl instances in the system.")),
+        /*
+            Sinks:
+            seastar::http::internal::http_content_length_data_sink_impl:     0
+            seastar::tls::tls_connected_socket_impl::sink_impl:     1
+            sstables::sizing_data_sink:     0
+            compressed_file_data_sink_impl<crc32_utils, (compressed_checksum_mode)1>:     0
+            generic_server::counted_data_sink_impl:     0
+            seastar::net::posix_data_sink_impl:     13
+            sstables::checksummed_file_data_sink_impl<crc32_utils>:     0
+            seastar::file_data_sink_impl:     1
+            */
+            sm::make_counter("http_content_length_data_sink_impl",
+                             _io_stats.http_content_length_data_sink_impl,
+                             sm::description("Keep a track of the number of data_sink_impl instances in the system.")),
+            sm::make_counter("tls_connected_socket_impl_sink",
+                             _io_stats.tls_connected_socket_impl_sink,
+                             sm::description("Keep a track of the number of data_sink_impl instances in the system.")),
+            sm::make_counter(
+                "sizing_data_sink", _io_stats.sizing_data_sink, sm::description("Keep a track of the number of data_sink_impl instances in the system.")),
+            sm::make_counter("compressed_file_data_sink_impl",
+                             _io_stats.compressed_file_data_sink_impl,
+                             sm::description("Keep a track of the number of data_sink_impl instances in the system.")),
+            sm::make_counter("counted_data_sink_impl",
+                             _io_stats.counted_data_sink_impl,
+                             sm::description("Keep a track of the number of data_sink_impl instances in the system.")),
+            sm::make_counter("posix_data_sink_impl",
+                             _io_stats.posix_data_sink_impl,
+                             sm::description("Keep a track of the number of data_sink_impl instances in the system.")),
+            sm::make_counter("checksummed_file_data_sink_impl",
+                             _io_stats.checksummed_file_data_sink_impl,
+                             sm::description("Keep a track of the number of data_sink_impl instances in the system.")),
+            sm::make_counter(
+                "file_data_sink_impl", _io_stats.file_data_sink_impl, sm::description("Keep a track of the number of data_sink_impl instances in the system.")),
     });
 }
 

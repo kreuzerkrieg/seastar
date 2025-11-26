@@ -103,6 +103,9 @@
 
 #endif // !defined(SEASTAR_DEFAULT_ALLOCATOR)
 
+#include <seastar/core/iostream.hh>
+
+
 #include <seastar/core/cacheline.hh>
 #include <seastar/core/memory.hh>
 #include <seastar/core/print.hh>
@@ -2066,6 +2069,16 @@ seastar::internal::log_buf::inserter_iterator do_dump_memory_diagnostics(seastar
     auto free_mem = get_cpu_mem().nr_free_pages * page_size;
     auto total_mem = get_cpu_mem().nr_pages * page_size;
     it = fmt::format_to(it, "Dumping seastar memory diagnostics\n");
+
+    it = fmt::format_to(it, "Sources:\n");
+    for (const auto& [key, value]:data_source::source_impl_types) {
+        it = fmt::format_to(it, "{}:     {}\n", key, value);
+    }
+
+    it = fmt::format_to(it, "Sinks:\n");
+    for (const auto& [key, value]:data_sink::sink_impl_types) {
+        it = fmt::format_to(it, "{}:     {}\n", key, value);
+    }
 
     it = fmt::format_to(it, "Used memory:   {}\n", to_hr_size(total_mem - free_mem));
     it = fmt::format_to(it, "Free memory:   {}\n", to_hr_size(free_mem));
