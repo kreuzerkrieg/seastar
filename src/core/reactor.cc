@@ -1723,7 +1723,7 @@ void io_completion::complete_with(ssize_t res) {
         return;
     }
 
-    reactor::io_stats::local().aio_errors++;
+    io_stats::local().aio_errors++;
     try {
         throw_kernel_error(res);
     } catch (...) {
@@ -2634,6 +2634,12 @@ void reactor::register_metrics() {
                 sm::description(
                         "Counts the number of buffered bytes that were read ahead of time and were discarded because they were not needed, wasting disk bandwidth."
                         " Indicates over-eager read ahead configuration.")),
+        sm::make_counter("data_sources_count", _io_stats.data_sources_count,
+                sm::description(
+                        "Keep a track of the number of data_source_impl instances in the system.")),
+        sm::make_counter("data_sinks_count", _io_stats.data_sinks_count,
+                sm::description(
+                        "Keep a track of the number of data_sink_impl instances in the system.")),
     });
 }
 

@@ -153,6 +153,33 @@ public:
 };
 
 SEASTAR_MODULE_EXPORT
+
+struct io_stats {
+    uint64_t aio_reads = 0;
+    uint64_t aio_read_bytes = 0;
+    uint64_t aio_writes = 0;
+    uint64_t aio_write_bytes = 0;
+    uint64_t aio_outsizes = 0;
+    uint64_t aio_errors = 0;
+    uint64_t aio_retries = 0;
+    uint64_t fstream_reads = 0;
+    uint64_t fstream_read_bytes = 0;
+    uint64_t fstream_reads_blocked = 0;
+    uint64_t fstream_read_bytes_blocked = 0;
+    uint64_t fstream_read_aheads_discarded = 0;
+    uint64_t fstream_read_ahead_discarded_bytes = 0;
+    uint64_t data_sources_count = 0;
+    uint64_t data_sinks_count = 0;
+
+private:
+    friend class file_data_source_impl;
+    friend class data_source_impl;
+    friend class data_sink_impl;
+    friend void io_completion::complete_with(ssize_t);
+    friend class io_queue;
+    static io_stats& local() noexcept;
+};
+
 class reactor {
 private:
     struct sched_entity;
@@ -178,6 +205,7 @@ private:
     friend class internal::reactor_stall_sampler;
     friend class preempt_io_context;
     friend struct hrtimer_aio_completion;
+    friend struct io_stats;
     friend class reactor_backend_epoll;
     friend class reactor_backend_aio;
     friend class reactor_backend_uring;
@@ -190,27 +218,7 @@ public:
     using work_waiting_on_reactor = seastar::work_waiting_on_reactor;
     using idle_cpu_handler = seastar::idle_cpu_handler;
 
-    struct io_stats {
-        uint64_t aio_reads = 0;
-        uint64_t aio_read_bytes = 0;
-        uint64_t aio_writes = 0;
-        uint64_t aio_write_bytes = 0;
-        uint64_t aio_outsizes = 0;
-        uint64_t aio_errors = 0;
-        uint64_t aio_retries = 0;
-        uint64_t fstream_reads = 0;
-        uint64_t fstream_read_bytes = 0;
-        uint64_t fstream_reads_blocked = 0;
-        uint64_t fstream_read_bytes_blocked = 0;
-        uint64_t fstream_read_aheads_discarded = 0;
-        uint64_t fstream_read_ahead_discarded_bytes = 0;
 
-    private:
-        friend class file_data_source_impl;
-        friend void io_completion::complete_with(ssize_t);
-        friend class io_queue;
-        static io_stats& local() noexcept;
-    };
     /// Scheduling statistics.
     struct sched_stats {
         /// Total number of tasks processed by this shard's reactor until this point.
@@ -794,7 +802,7 @@ inline int hrtimer_signal() {
     return SIGRTMIN;
 }
 
-inline auto reactor::io_stats::local() noexcept -> io_stats& {
+inline auto io_stats::local() noexcept -> io_stats& {
     return engine()._io_stats;
 }
 

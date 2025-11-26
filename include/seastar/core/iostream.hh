@@ -58,6 +58,7 @@ namespace seastar {
 
 SEASTAR_MODULE_EXPORT_BEGIN
 
+struct io_stats;
 namespace net { class packet; }
 namespace testing {
 class input_stream_test;
@@ -65,8 +66,10 @@ class output_stream_test;
 }
 
 class data_source_impl {
+    io_stats& _stats;
 public:
-    virtual ~data_source_impl() {}
+    data_source_impl();
+    virtual ~data_source_impl();
     virtual future<temporary_buffer<char>> get() = 0;
     virtual future<temporary_buffer<char>> skip(uint64_t n);
     virtual future<> close() { return make_ready_future<>(); }
@@ -108,8 +111,10 @@ public:
 };
 
 class data_sink_impl {
+    io_stats& _stats;
 public:
-    virtual ~data_sink_impl() {}
+    data_sink_impl();
+    virtual ~data_sink_impl();
     virtual temporary_buffer<char> allocate_buffer(size_t size) {
         return temporary_buffer<char>(size);
     }

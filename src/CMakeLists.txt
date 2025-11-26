@@ -23,6 +23,7 @@ target_sources (seastar-module
     core/future-util.cc
     core/future.cc
     core/io_queue.cc
+    core/iostream.cc
     core/linux-aio.cc
     core/memory.cc
     core/metrics.cc
