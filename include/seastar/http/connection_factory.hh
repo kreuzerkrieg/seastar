@@ -40,6 +40,14 @@ public:
      * be used by \ref client as transport for its http connections
      */
     virtual future<connected_socket> make(abort_source*) = 0;
+    /**
+     * \brief Reset internal state of the factory
+     *
+     * This method is called by \ref client when it detects that all existing connections
+     * are stale (e.g. after server restart). The factory should drop any cached state
+     * so that subsequent calls to \ref make() will create fresh connections.
+     */
+    virtual void reset() = 0;
     virtual ~connection_factory() {}
 };
 
