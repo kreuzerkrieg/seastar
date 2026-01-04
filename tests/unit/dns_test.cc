@@ -43,7 +43,7 @@ static future<> test_resolve(dns_resolver::options opts) {
         hostent e = co_await d.get_host_by_name(hostname, inet_address::family::INET);
         hostent a;
         try {
-            a = co_await d.get_host_by_addr(e.addr_list.front());
+            a = co_await d.get_host_by_addr(e.addr_list.front().addr);
         } catch (const std::system_error& e) {
             if (e.code().category() != dns::error_category()) {
                 throw;
@@ -51,7 +51,10 @@ static future<> test_resolve(dns_resolver::options opts) {
             continue;
         }
         hostent e2 = co_await d.get_host_by_name(a.names.front(), inet_address::family::INET);
-        BOOST_REQUIRE(std::count(e2.addr_list.begin(), e2.addr_list.end(), e.addr_list.front()));
+        BOOST_REQUIRE(std::count_if(e2.addr_list.cbegin(), e2.addr_list.cend(), [&e](const auto& entry)
+        {
+            return entry.addr == e.addr_list.front().addr && entry.ttl_seconds > 0;
+        }));
         co_await d.close();
         co_return;
     }

@@ -53,8 +53,22 @@ namespace net {
 struct hostent {
     // Primary name is always first
     std::vector<sstring> names;
+
+    struct addr_entry
+    {
+        inet_address addr;
+        // https://datatracker.ietf.org/doc/html/rfc1035#section-2.3.4
+        // https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.3
+        // https://datatracker.ietf.org/doc/html/rfc2181#section-8
+        unsigned int ttl_seconds{std::numeric_limits<signed int>::max()};
+
+        bool operator==(const addr_entry& rhs) const{
+            return addr == rhs.addr;
+        }
+    };
+
     // Primary address is also always first.
-    std::vector<inet_address> addr_list;
+    std::vector<addr_entry> addr_list;
 };
 
 typedef std::optional<inet_address::family> opt_family;
