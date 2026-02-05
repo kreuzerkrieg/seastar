@@ -31,4 +31,7 @@ namespace seastar::http {
 /// The function should take ownership of the stream while using it and must close the stream when done.
 using body_writer_type = noncopyable_function<future<>(output_stream<char>&&)>;
 
+template <typename Headers>
+using header_writer = std::function<future<>(Headers&)>;
+
 } // namespace seastar::http

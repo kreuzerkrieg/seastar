@@ -115,6 +115,14 @@ static void validate_request(const request& req) {
     }
 }
 
+future<> connection::send_request_head(request& req) {
+    return _write_buf.write(req.request_line()).then([this, &req] {
+        return req.write_request_headers(_write_buf, req.header_writer).then([this] {
+            return _write_buf.write("\r\n", 2);
+        });
+    });
+}
+
 future<> connection::send_request_head(const request& req) {
     return _write_buf.write(req.request_line()).then([this, &req] {
         return req.write_request_headers(_write_buf).then([this] {

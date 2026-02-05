@@ -82,6 +82,9 @@ struct request {
     sstring protocol_name = "http";
     http::body_writer_type body_writer; // for client
 
+    using header_writer_type = http::header_writer<decltype(_headers)>;
+    header_writer_type header_writer;
+
     using query_parameters_type = std::unordered_map<sstring, std::vector<sstring>, seastar::internal::string_view_hash, std::equal_to<>>;
 private:
     query_parameters_type _query_params;
@@ -413,6 +416,7 @@ public:
     static request make(httpd::operation_type type, sstring host, sstring path);
 
     sstring request_line() const;
+    future<> write_request_headers(output_stream<char>& out, header_writer_type headers_writer);
     future<> write_request_headers(output_stream<char>& out) const;
 private:
     void add_query_param(std::string_view param);

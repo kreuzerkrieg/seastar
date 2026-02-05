@@ -82,6 +82,15 @@ sstring request::request_line() const {
 }
 
 // FIXME -- generalize with reply::write_request_headers
+future<> request::write_request_headers(output_stream<char>& out, header_writer_type headers_writer) {
+    if (headers_writer) {
+        return headers_writer(_headers).then([this, &out] {
+            return write_request_headers(out);
+        });
+    }
+    return write_request_headers(out);
+}
+
 future<> request::write_request_headers(output_stream<char>& out) const {
     return do_for_each(_headers, [&out] (auto& h) {
         return out.write(h.first + ": " + h.second + "\r\n");
