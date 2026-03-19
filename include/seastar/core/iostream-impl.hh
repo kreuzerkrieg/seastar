@@ -203,6 +203,9 @@ input_stream<CharType>::read_exactly(size_t n) noexcept {
         _buf.trim_front(n);
         return make_ready_future<tmp_buf>(std::move(front));
     } else if (_buf.size() == 0) {
+        if (_eof) {
+            return make_ready_future<tmp_buf>();
+        }
         // buffer is empty: grab one and retry
         return _fd.get().then([this, n] (auto buf) mutable {
             if (buf.size() == 0) {
