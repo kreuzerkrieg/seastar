@@ -21,8 +21,11 @@
 
 #pragma once
 
+#include <array>
+#include <chrono>
 #include <boost/intrusive/list.hpp>
 #include <seastar/net/api.hh>
+#include <seastar/http/common.hh>
 #include <seastar/http/connection_factory.hh>
 #include <seastar/http/reply.hh>
 #include <seastar/http/retry_strategy.hh>
@@ -42,6 +45,32 @@ namespace http {
 class client;
 struct request;
 struct reply;
+
+/// Per-HTTP-method I/O statistics
+struct http_method_stats {
+    uint64_t ops = 0;
+    uint64_t bytes = 0;
+    uint64_t retries = 0;
+    std::chrono::duration<double> latency{0};
+
+    void update(uint64_t len, std::chrono::duration<double> lat) {
+        bytes += len;
+        latency += lat;
+    }
+};
+
+/// Container holding per-method stats indexed by operation_type
+struct http_stats {
+    static constexpr size_t num_methods = static_cast<size_t>(httpd::operation_type::NUM_OPERATION);
+    std::array<http_method_stats, num_methods> methods{};
+
+    http_method_stats& operator[](httpd::operation_type method) {
+        return methods[static_cast<size_t>(method)];
+    }
+    const http_method_stats& operator[](httpd::operation_type method) const {
+        return methods[static_cast<size_t>(method)];
+    }
+};
 
 namespace internal {
 
@@ -163,6 +192,7 @@ private:
     condition_variable _wait_con;
     util::integrated_length<unsigned, lowres_clock, std::chrono::microseconds> _requests_queued;
     connections_list_t _pool;
+    http::http_stats _http_stats;
 
     using connection_ptr = seastar::shared_ptr<connection>;
 
@@ -374,6 +404,15 @@ public:
      */
     const auto& integrated_requests_queued() const noexcept {
         return _requests_queued;
+    }
+
+    /**
+     * \brief Returns the per-method HTTP statistics
+     *
+     * This is a container holding per-method I/O statistics indexed by operation type.
+     */
+    const http::http_stats& get_stats() const noexcept {
+        return _http_stats;
     }
 };
 

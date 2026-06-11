@@ -31,6 +31,7 @@
 #include <seastar/core/when_all.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/http/client.hh>
+#include <seastar/http/common.hh>
 #include <seastar/http/request.hh>
 #include <seastar/http/reply.hh>
 #include <seastar/http/response_parser.hh>
@@ -352,6 +353,8 @@ future<> client::maybe_retry_request(std::exception_ptr ex,
         if (!retry) {
             return make_exception_future<>(std::move(ex));
         }
+        auto method = httpd::str2type(req._method);
+        ++_http_stats[method].retries;
         return with_new_connection([this, &req, &handle, as, expected](connection& con) {
                                        return do_make_request(con, req, handle, as, expected);
                                    },
@@ -370,6 +373,9 @@ future<> client::make_request(const request& req, reply_handler& handle, const r
     } catch (...) {
         return current_exception_as_future();
     }
+    auto method = httpd::str2type(req._method);
+    ++_http_stats[method].ops;
+    auto start = lowres_clock::now();
     return with_connection([this, &req, &handle, as, expected] (connection& con) {
         return do_make_request(con, req, handle, as, expected);
     }, as).handle_exception([this, &req, &handle, &strategy, as, expected] (std::exception_ptr ex) {
@@ -377,6 +383,8 @@ future<> client::make_request(const request& req, reply_handler& handle, const r
             return make_exception_future<>(as->abort_requested_exception_ptr());
         }
         return maybe_retry_request(std::move(ex), 0, req, handle, strategy, expected, as);
+    }).finally([this, method, start] {
+        _http_stats[method].latency += std::chrono::duration<double>(lowres_clock::now() - start);
     });
 }
 
