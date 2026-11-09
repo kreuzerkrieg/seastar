@@ -363,6 +363,13 @@ future<> client::maybe_retry_request(std::exception_ptr ex,
             return make_exception_future<>(std::move(ex));
         }
         ++_http_stats[method].retries;
+        if (!_reset_policy->should_reset(ex)) {
+            return with_connection([this, &req, &handle, as, expected](connection& con) {
+                return do_make_request(con, req, handle, as, expected);
+            }, as).handle_exception([this, retry_count, method, &req, &handle, &strategy, as, expected](std::exception_ptr ex) {
+                return maybe_retry_request(std::move(ex), retry_count + 1, method, req, handle, strategy, expected, as);
+            });
+        }
         return with_new_connection([this, &req, &handle, as, expected](connection& con) {
                                        return do_make_request(con, req, handle, as, expected);
                                    },
@@ -430,7 +437,9 @@ future<> client::do_make_request(connection& con, const request& req, reply_hand
         auto& rep = *reply;
         if (expected.has_value() && rep._status != expected.value()) {
             if (!http_log.is_enabled(log_level::debug)) {
-                return make_exception_future<>(httpd::unexpected_status_error(rep._status));
+                // Not read, only made so the reply knows how much of the body is left.
+                auto in = make_body_stream(con, req, rep);
+                return drain_after_failure(con, rep, std::make_exception_ptr(httpd::unexpected_status_error(rep._status)));
             }
 
             return do_with(make_body_stream(con, req, rep), [reply = std::move(reply)] (auto& in) mutable {
@@ -442,7 +451,10 @@ future<> client::do_make_request(connection& con, const request& req, reply_hand
         }
 
         auto in = make_body_stream(con, req, rep);
-        return handle(rep, std::move(in)).then([this, reply = std::move(reply), &con] {
+        return handle(rep, std::move(in)).then_wrapped([this, reply = std::move(reply), &con] (future<> f) {
+            if (f.failed()) {
+                return drain_after_failure(con, *reply, f.get_exception());
+            }
             if (reply->left_content_length > 0) {
                 auto bytes_left = reply->left_content_length;
                 /*
@@ -469,10 +481,31 @@ future<> client::do_make_request(connection& con, const request& req, reply_hand
             }
             return make_ready_future<>();
         });
-    }).handle_exception([&con] (auto ex) mutable {
-        con._persistent = false;
+    }).handle_exception([&con, this] (auto ex) mutable {
+        con._persistent = con._persistent && !_reset_policy->should_reset(ex);
         return make_exception_future<>(std::move(ex));
     }).finally([sub = std::move(sub)] {});
+}
+
+// A failed reply leaves the connection reusable only if the policy allows it and the rest
+// of the body is short enough to drain, the same limit as after a successful handler.
+future<> client::drain_after_failure(connection& con, const reply& rep, std::exception_ptr ex) {
+    auto bytes_left = rep.left_content_length;
+    if (bytes_left == 0 || !con._persistent) {
+        return make_exception_future<>(std::move(ex));
+    }
+    if (bytes_left > _max_bytes_to_drain || _reset_policy->should_reset(ex)) {
+        con._persistent = false;
+        return make_exception_future<>(std::move(ex));
+    }
+    http_log.trace("request failed with {} bytes of the reply left behind, skipping them to keep the connection", bytes_left);
+    return con._read_buf.skip(bytes_left).then_wrapped([&con, ex = std::move(ex)] (future<> skipped) mutable {
+        if (skipped.failed()) {
+            skipped.ignore_ready_future();
+            con._persistent = false;
+        }
+        return make_exception_future<>(std::move(ex));
+    });
 }
 
 future<> client::close() noexcept {
