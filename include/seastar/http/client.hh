@@ -219,6 +219,7 @@ private:
                                  abort_source* as);
 
     future<> do_make_request(connection& con, const request& req, reply_handler& handle, abort_source*, std::optional<reply::status_type> expected);
+    future<> drain_reply(connection& con, const reply& rep, std::exception_ptr ex) const;
 
 public:
     /**
@@ -279,9 +280,10 @@ public:
      * receive exception from the \ref make_request() call and will have to do something about it.
      * Client provides a transparent way of handling it called "retry".
      *
-     * When enabled, it makes client catch the transport error, close the broken connection, open
-     * another one and retry the very same request one more time over this new connection. If the
-     * second attempt fails, this error is reported back to user.
+     * When enabled, it makes client catch the transport error, close the broken connection and
+     * retry the very same request one more time over another connection, an idle one from the
+     * pool or a new one when the pool is empty. A connection the server closed leaves the pool by
+     * itself. If the second attempt fails, this error is reported back to user.
      */
     explicit client(std::unique_ptr<connection_factory> f, unsigned max_connections = default_max_connections, retry_requests retry = retry_requests::no, size_t max_bytes_to_drain = default_max_bytes_to_drain);
     client(std::unique_ptr<connection_factory> f, unsigned max_connections, size_t max_bytes_to_drain, std::unique_ptr<retry_strategy>&& retry_strategy);

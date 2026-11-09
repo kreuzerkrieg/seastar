@@ -167,6 +167,9 @@ future<connection::reply_ptr> connection::do_make_request(const request& req) {
                 });
             });
         });
+    }).handle_exception([this] (std::exception_ptr ex) {
+        _persistent = false;
+        return make_exception_future<reply_ptr>(std::move(ex));
     });
 }
 
@@ -363,7 +366,7 @@ future<> client::maybe_retry_request(std::exception_ptr ex,
             return make_exception_future<>(std::move(ex));
         }
         ++_http_stats[method].retries;
-        return with_new_connection([this, &req, &handle, as, expected](connection& con) {
+        return with_connection([this, &req, &handle, as, expected](connection& con) {
                                        return do_make_request(con, req, handle, as, expected);
                                    },
                                    as).handle_exception([this, retry_count, method, &req, &handle, &strategy, as, expected](std::exception_ptr ex) {
@@ -429,50 +432,51 @@ future<> client::do_make_request(connection& con, const request& req, reply_hand
     return con.do_make_request(req).then([this, &con, &req, &handle, expected] (connection::reply_ptr reply) mutable {
         auto& rep = *reply;
         if (expected.has_value() && rep._status != expected.value()) {
-            if (!http_log.is_enabled(log_level::debug)) {
-                return make_exception_future<>(httpd::unexpected_status_error(rep._status));
-            }
-
-            return do_with(make_body_stream(con, req, rep), [reply = std::move(reply)] (auto& in) mutable {
-                return util::read_entire_stream_contiguous(in).then([reply = std::move(reply)] (auto message) {
-                    http_log.debug("request finished with {}: {}", reply->_status, message);
-                    return make_exception_future<>(httpd::unexpected_status_error(reply->_status));
-                });
-            });
+            // Not read, only made so the reply knows how much of the body is left.
+            auto in = make_body_stream(con, req, rep);
+            return drain_reply(con, rep, std::make_exception_ptr(httpd::unexpected_status_error(rep._status)));
         }
 
         auto in = make_body_stream(con, req, rep);
-        return handle(rep, std::move(in)).then([this, reply = std::move(reply), &con] {
-            if (reply->left_content_length > 0) {
-                auto bytes_left = reply->left_content_length;
-                /*
-                 * Reply with known body size (content_length_source_impl) tracks this counter
-                 * carefully and sets it with the exact number of bytes left to be read. If this
-                 * value is low enough, it's cheaper to read the body up to the end and instantly
-                 * discard it rather than to close the connection and establish a new one for
-                 * next request.
-                 *
-                 * Reply with "dynamic" body (chunked_source_impl) will set this counter to zero
-                 * after reading all body contents, otherwise it will be set to maximum uint64_t
-                 * value, so the below check will be false in this case.
-                 *
-                 * The "HEAD" reply doesn't have body and will report zero left bytes.
-                 */
-                if (bytes_left <= _max_bytes_to_drain) {
-                    http_log.trace("content was not fully consumed, {} bytes were left behind, skipping and returning the connection to the pool", bytes_left);
-                    return con._read_buf.skip(bytes_left);
-                }
-                http_log.trace("content was not fully consumed, content length is {} but {} left, will close the connection",
-                               reply->content_length,
-                               reply->left_content_length);
-                con._persistent = false;
-            }
-            return make_ready_future<>();
+        return handle(rep, std::move(in)).then_wrapped([this, reply = std::move(reply), &con] (future<> f) {
+            return drain_reply(con, *reply, f.failed() ? f.get_exception() : std::exception_ptr{});
         });
-    }).handle_exception([&con] (auto ex) mutable {
-        con._persistent = false;
-        return make_exception_future<>(std::move(ex));
     }).finally([sub = std::move(sub)] {});
+}
+
+// Skips what the handler left of the reply body, so that the connection can be reused, or closes
+// the connection when that is too much. Then resolves with the handler's outcome, ex if it failed.
+future<> client::drain_reply(connection& con, const reply& rep, std::exception_ptr ex) const {
+    /*
+     * Reply with known body size (content_length_source_impl) tracks this counter
+     * carefully and sets it with the exact number of bytes left to be read. If this
+     * value is low enough, it's cheaper to read the body up to the end and instantly
+     * discard it rather than to close the connection and establish a new one for
+     * next request.
+     *
+     * Reply with "dynamic" body (chunked_source_impl) will set this counter to zero
+     * after reading all body contents, otherwise it will be set to maximum uint64_t
+     * value, so the below check will be false in this case.
+     *
+     * The "HEAD" reply doesn't have body and will report zero left bytes.
+     */
+    auto bytes_left = rep.left_content_length;
+    if (bytes_left == 0 || !con._persistent) {
+        return ex ? make_exception_future<>(std::move(ex)) : make_ready_future();
+    }
+    if (bytes_left > _max_bytes_to_drain) {
+        http_log.trace("content was not fully consumed, content length is {} but {} left, will close the connection", rep.content_length, bytes_left);
+        con._persistent = false;
+        return ex ? make_exception_future<>(std::move(ex)) : make_ready_future();
+    }
+    http_log.trace("content was not fully consumed, {} bytes were left behind, skipping and returning the connection to the pool", bytes_left);
+    return con._read_buf.skip(bytes_left).then_wrapped([&con, ex = std::move(ex)] (future<> skipped) mutable {
+        if (skipped.failed()) {
+            skipped.ignore_ready_future();
+            con._persistent = false;
+        }
+        return ex ? make_exception_future<>(std::move(ex)) : make_ready_future();
+    });
 }
 
 future<> client::close() noexcept {
