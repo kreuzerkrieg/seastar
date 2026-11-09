@@ -157,6 +157,9 @@ public:
                 if (err.code().value() != EPIPE) {
                     throw err;
                 }
+            }).finally([this] {
+                // Like the FIN a real socket sends: the peer's wait_input_shutdown() resolves.
+                (*_buffer)->shutdown();
             });
         });
     }
