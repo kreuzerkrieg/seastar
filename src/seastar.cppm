@@ -622,8 +622,10 @@ using seastar::experimental::spawn_parameters;
 
 export namespace seastar::http {
 
+using seastar::http::always_reset_policy;
 using seastar::http::client;
 using seastar::http::connection_factory;
+using seastar::http::connection_reset_policy;
 using seastar::http::no_retry_strategy;
 using seastar::http::operator<<;
 using seastar::http::reply;
