@@ -363,6 +363,13 @@ future<> client::maybe_retry_request(std::exception_ptr ex,
             return make_exception_future<>(std::move(ex));
         }
         ++_http_stats[method].retries;
+        if (!_reset_policy->should_reset(ex)) {
+            return with_connection([this, &req, &handle, as, expected](connection& con) {
+                return do_make_request(con, req, handle, as, expected);
+            }, as).handle_exception([this, retry_count, method, &req, &handle, &strategy, as, expected](std::exception_ptr ex) {
+                return maybe_retry_request(std::move(ex), retry_count + 1, method, req, handle, strategy, expected, as);
+            });
+        }
         return with_new_connection([this, &req, &handle, as, expected](connection& con) {
                                        return do_make_request(con, req, handle, as, expected);
                                    },
@@ -430,6 +437,8 @@ future<> client::do_make_request(connection& con, const request& req, reply_hand
         auto& rep = *reply;
         if (expected.has_value() && rep._status != expected.value()) {
             if (!http_log.is_enabled(log_level::debug)) {
+                // The body is left unread, so no policy may keep the connection.
+                con._persistent = false;
                 return make_exception_future<>(httpd::unexpected_status_error(rep._status));
             }
 
@@ -442,7 +451,15 @@ future<> client::do_make_request(connection& con, const request& req, reply_hand
         }
 
         auto in = make_body_stream(con, req, rep);
-        return handle(rep, std::move(in)).then([this, reply = std::move(reply), &con] {
+        return handle(rep, std::move(in)).then_wrapped([this, reply = std::move(reply), &con] (future<> f) {
+            if (f.failed()) {
+                // A handler that failed mid-body leaves the connection mid-reply, so no
+                // policy may keep it.
+                if (reply->left_content_length > 0) {
+                    con._persistent = false;
+                }
+                return f;
+            }
             if (reply->left_content_length > 0) {
                 auto bytes_left = reply->left_content_length;
                 /*
@@ -469,8 +486,8 @@ future<> client::do_make_request(connection& con, const request& req, reply_hand
             }
             return make_ready_future<>();
         });
-    }).handle_exception([&con] (auto ex) mutable {
-        con._persistent = false;
+    }).handle_exception([&con, this] (auto ex) mutable {
+        con._persistent &= !_reset_policy->should_reset(ex);
         return make_exception_future<>(std::move(ex));
     }).finally([sub = std::move(sub)] {});
 }

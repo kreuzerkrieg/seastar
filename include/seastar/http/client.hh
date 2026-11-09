@@ -190,6 +190,7 @@ private:
     size_t _max_bytes_to_drain;
     unsigned long _total_new_connections = 0;
     std::unique_ptr<retry_strategy> _retry_strategy;
+    std::unique_ptr<connection_reset_policy> _reset_policy = std::make_unique<always_reset_policy>();
     condition_variable _wait_con;
     util::integrated_length<unsigned, lowres_clock, std::chrono::microseconds> _requests_queued;
     connections_list_t _pool;
@@ -282,6 +283,10 @@ public:
      * When enabled, it makes client catch the transport error, close the broken connection, open
      * another one and retry the very same request one more time over this new connection. If the
      * second attempt fails, this error is reported back to user.
+     *
+     * When a \ref connection_reset_policy allows keeping the connection an attempt failed on
+     * (see \ref set_connection_reset_policy()), a retry goes over a pooled connection rather than
+     * a new one.
      */
     explicit client(std::unique_ptr<connection_factory> f, unsigned max_connections = default_max_connections, retry_requests retry = retry_requests::no, size_t max_bytes_to_drain = default_max_bytes_to_drain);
     client(std::unique_ptr<connection_factory> f, unsigned max_connections, size_t max_bytes_to_drain, std::unique_ptr<retry_strategy>&& retry_strategy);
@@ -359,6 +364,18 @@ public:
      * \param nr -- the new limit on the number of connections
      */
     future<> set_maximum_connections(unsigned nr);
+
+    /**
+     * \brief Sets the policy deciding whether a connection survives a failed request attempt
+     *
+     * By default every connection an attempt failed on is closed, and a retry after it
+     * dials a new one. See connection_reset_policy for what a policy can and cannot keep.
+     *
+     * \param policy -- the policy to consult from now on
+     */
+    void set_connection_reset_policy(std::unique_ptr<connection_reset_policy> policy) noexcept {
+        _reset_policy = std::move(policy);
+    }
 
     /**
      * \brief Closes the client
