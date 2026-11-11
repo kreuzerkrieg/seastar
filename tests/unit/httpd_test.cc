@@ -1876,6 +1876,30 @@ SEASTAR_TEST_CASE(test_client_drains_body_after_handler_error) {
     });
 }
 
+// A handler that throws instead of returning a failed future gets the same treatment:
+// the rest of the body is drained, so the next request does not read it as a reply.
+SEASTAR_TEST_CASE(test_client_drains_body_after_handler_throws) {
+    return seastar::async([] {
+        loopback_connection_factory lcf(1);
+        auto ss = lcf.get_server_socket();
+        auto server = serve_replies(ss, {make_reply("503 Service Unavailable", 64), make_reply("200 OK", 0)});
+
+        auto cln = http::client(std::make_unique<loopback_http_factory>(lcf));
+        BOOST_REQUIRE_THROW(cln.make_request(http::request::make("GET", "test", "/test"), [] (const http::reply&, input_stream<char>&&) -> future<> {
+            throw std::runtime_error("refused");
+        }).get(), std::runtime_error);
+        cln.make_request(http::request::make("GET", "test", "/test"), [] (const http::reply& rep, input_stream<char>&&) {
+            BOOST_REQUIRE_EQUAL(rep._status, http::reply::status_type::ok);
+            return make_ready_future<>();
+        }).get();
+        BOOST_REQUIRE_EQUAL(cln.total_new_connections_nr(), 1);
+
+        cln.close().get();
+        ss.abort_accept();
+        server.get();
+    });
+}
+
 // A pooled connection the server closes leaves the pool by itself, so the next request
 // dials instead of failing on it. The retry relies on this: it takes a pooled connection.
 SEASTAR_TEST_CASE(test_client_drops_pooled_connection_closed_by_server) {
