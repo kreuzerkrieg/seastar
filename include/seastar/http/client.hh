@@ -305,6 +305,12 @@ public:
      * Note that the handle callback should be prepared to be called more than once, because
      * client may restart the whole request processing in case server closes the connection
      * in the middle of operation
+     *
+     * Whether the handler succeeds or fails, and when the status is not the expected one, the
+     * client skips what is left of a reply body of known length, up to the limit given to the
+     * constructor, and keeps the connection for the next request. The returned future resolves,
+     * or fails, only after that skip, so it waits for those bytes to arrive. A longer remainder,
+     * or one of unknown length, closes the connection instead.
      */
     future<> make_request(request&& req, reply_handler&& handle, std::optional<reply::status_type>&& expected = std::nullopt, abort_source* as = nullptr);
 

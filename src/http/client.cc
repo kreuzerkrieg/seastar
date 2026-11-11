@@ -440,14 +440,17 @@ future<> client::do_make_request(connection& con, const request& req, reply_hand
     auto sub = as ? as->subscribe([&con] () noexcept { con.shutdown(); }) : std::nullopt;
     return con.do_make_request(req).then([this, &con, &req, &handle, expected] (connection::reply_ptr reply) mutable {
         auto& rep = *reply;
-        if (expected.has_value() && rep._status != expected.value()) {
-            // Not read, only made so the reply knows how much of the body is left.
-            auto in = make_body_stream(con, req, rep);
-            return drain_reply(con, rep, std::make_exception_ptr(httpd::unexpected_status_error(rep._status)));
-        }
-
-        auto in = make_body_stream(con, req, rep);
-        return handle(rep, std::move(in)).then_wrapped([this, reply = std::move(reply), &con] (future<> f) {
+        // A handler may also throw instead of returning a failed future, and that must
+        // reach drain_reply() as well, or the connection goes back to the pool mid-body.
+        auto handled = futurize_invoke([&con, &req, &handle, &rep, expected] () -> future<> {
+            if (expected.has_value() && rep._status != expected.value()) {
+                // Not read, only made so the reply knows how much of the body is left.
+                auto in = make_body_stream(con, req, rep);
+                return make_exception_future<>(httpd::unexpected_status_error(rep._status));
+            }
+            return handle(rep, make_body_stream(con, req, rep));
+        });
+        return handled.then_wrapped([this, reply = std::move(reply), &con] (future<> f) {
             return drain_reply(con, *reply, f.failed() ? f.get_exception() : std::exception_ptr{});
         });
     }).finally([sub = std::move(sub)] {});
