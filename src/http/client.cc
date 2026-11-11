@@ -188,6 +188,12 @@ input_stream<char> connection::in(reply& rep) {
         return input_stream<char>(data_source(std::make_unique<httpd::internal::chunked_source_impl>(_read_buf, rep.chunk_extensions, rep.trailing_headers, rep.left_content_length)));
     }
 
+    if (rep.get_header("Content-Length").empty()) {
+        // The body ends where the connection does, so no reply can follow it.
+        _persistent = false;
+        return input_stream<char>(data_source(std::make_unique<httpd::internal::close_delimited_source_impl>(_read_buf, rep.left_content_length)));
+    }
+
     return input_stream<char>(data_source(std::make_unique<httpd::internal::content_length_source_impl>(_read_buf, rep.content_length, rep.left_content_length)));
 }
 

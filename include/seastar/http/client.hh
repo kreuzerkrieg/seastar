@@ -141,6 +141,9 @@ public:
      * finished, the reply can be additionally updated with trailing headers and chunk
      * extentions
      *
+     * A body with neither Content-Length nor chunked encoding runs until the server closes
+     * the connection, so the connection is not reused after it.
+     *
      */
     input_stream<char> in(reply& rep);
 
