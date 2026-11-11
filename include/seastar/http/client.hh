@@ -141,9 +141,6 @@ public:
      * finished, the reply can be additionally updated with trailing headers and chunk
      * extentions
      *
-     * A body with neither Content-Length nor chunked encoding runs until the server closes
-     * the connection, so the connection is not reused after it.
-     *
      */
     input_stream<char> in(reply& rep);
 
@@ -222,6 +219,7 @@ private:
                                  abort_source* as);
 
     future<> do_make_request(connection& con, const request& req, reply_handler& handle, abort_source*, std::optional<reply::status_type> expected);
+    static input_stream<char> make_body_stream(connection& con, const request& req, reply& rep);
     future<> drain_reply(connection& con, const reply& rep, std::exception_ptr ex) const;
 
 public:
